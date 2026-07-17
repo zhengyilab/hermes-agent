@@ -362,9 +362,11 @@ class WebhookAdapter(BasePlatformAdapter):
             except Exception:
                 pass
         if self.gateway_runner and _is_known_platform:
-            # Extract inline overrides (platform:chat_id format from _deliver_multi)
-            inline_chat_id = delivery.get("_inline_chat_id", "")
-            inline_thread_id = delivery.get("_inline_thread_id", "")
+            # inline_chat_id / inline_thread_id already parsed above (lines
+            # 347-353) from both the deliver_type "platform:chat_id" format and
+            # the _inline_* keys set by _deliver_multi. Do NOT re-read delivery
+            # here — that would overwrite the parsed target and silently fall
+            # back to deliver_extra / home channel (see PR #54373 review).
             return await self._deliver_cross_platform(
                 deliver_type, content, delivery,
                 chat_id_override=inline_chat_id,
@@ -1173,11 +1175,12 @@ class WebhookAdapter(BasePlatformAdapter):
         if deliver_type == "github_comment":
             return await self._deliver_github_comment(content, delivery)
 
-        # Fall through to the cross-platform dispatcher, which validates the
-        # target name and routes via the gateway runner.
-        return await self._deliver_cross_platform(
-            deliver_type, content, delivery
-        )
+        # Single target: route through _deliver_single so the
+        # "platform:chat_id" parser (lines 342-353) applies uniformly —
+        # _direct_deliver is reached directly by deliver_only routes, which
+        # would otherwise forward the raw "platform:chat_id" string to
+        # _deliver_cross_platform and fail (see PR #54373 review).
+        return await self._deliver_single(deliver_type, content, delivery, "")
 
     async def _deliver_github_comment(
         self, content: str, delivery: dict
